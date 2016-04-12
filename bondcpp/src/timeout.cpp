@@ -33,7 +33,7 @@ namespace bond {
 
 Timeout::Timeout(const ros::Duration &d,
                  boost::function<void(void)> on_timeout)
-  : duration_(d.sec, d.nsec), on_timeout_(on_timeout)
+  : duration_(d.sec, d.nsec), on_timeout_(on_timeout), deadline_(ros::WallTime::now() + duration_)
 {
 }
 
@@ -58,9 +58,18 @@ void Timeout::setDuration(const ros::WallDuration &d)
   duration_ = d;
 }
 
-
 void Timeout::reset()
 {
+  if (timer_.isValid())
+  {
+    double time_diff = ros::WallTime::now().toSec() - (deadline_.toSec() - duration_.toSec());
+    if (time_diff > 2.0)
+    {
+      ROS_WARN_STREAM("Resetting heartbeat timer after a delay of more than double the update period ("
+          << time_diff << " s; timeout after " << duration_.toSec() << " s).");
+    }
+  }
+
   timer_.stop();
   timer_ = nh_.createWallTimer(duration_, &Timeout::timerCallback, this, true);
   deadline_ = ros::WallTime::now() + duration_;
@@ -78,6 +87,9 @@ ros::WallDuration Timeout::left()
 
 void Timeout::timerCallback(const ros::WallTimerEvent &e)
 {
+  ROS_ERROR_STREAM("Timeout callback kicked in " <<
+                   std::abs((deadline_ - ros::WallTime::now()).toSec()) <<
+                   " s after the timeout of " << duration_.toSec() << " s).");
   if (on_timeout_)
     on_timeout_();
 }
